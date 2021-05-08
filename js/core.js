@@ -1,7 +1,7 @@
 window.Core = {  }
 
 Core.fps = 30
-Core.version = '1.0.44'
+Core.version = '1.0.46'
 Core.timer = null
 
 Core.allUpgradesBought = false
@@ -36,7 +36,7 @@ Core.loop = function(){
 		}
 
 		if(Stats.activePerk === 'autopilot'){
-			Core.extraInc -= inc * 0.5
+			Core.extraInc -= inc * 0.7
 		}
 
 		Stats.totalLength += inc + Core.extraInc
@@ -84,10 +84,11 @@ Core.updateHUD = function(){
 			visibleUpgrades[i].parentNode.removeChild(visibleUpgrades[i])
 		}
 		// Controlar coste
-		if(parseInt(visibleUpgrades[i].getAttribute('data-cost'), 10) > Stats.totalLength){
-			visibleUpgrades[i].setAttribute('disabled', true)
-		}else{
+		var hasRequiredLearning = !visibleUpgrades[i].getAttribute('data-required') || (visibleUpgrades[i].getAttribute('data-required') && Stats.learnings.indexOf(visibleUpgrades[i].getAttribute('data-required')) !== -1)
+		if(parseInt(visibleUpgrades[i].getAttribute('data-cost'), 10) < Stats.totalLength && hasRequiredLearning){
 			visibleUpgrades[i].removeAttribute('disabled')
+		}else{
+			visibleUpgrades[i].setAttribute('disabled', true)
 		}
 	}
 	// Calcular % del boostbar
@@ -127,7 +128,7 @@ Core.updateHUD = function(){
 		Core._btnRest.innerHTML = 'Rest (multiplier +' + m.toFixed(1) + ')'
 	}else{
           Core._btnRest.innerHTML = 'Rest'
-        }
+    }
 }
 
 Core.get = function(selector){
@@ -159,7 +160,8 @@ Core.save = function(){
 	if(!window.localStorage){
 		notif({
 			'type': 'error',
-			'msg': 'Your browser doesn\'t support this feature!'
+			'msg': 'Your browser doesn\'t support this feature!',
+			'position': 'center'
 		})
 		return false
 	}
@@ -191,7 +193,7 @@ Core.save = function(){
 	}
 	// Extra
 	window.localStorage.setItem('save-date', new Date())
-	notif({ 'type': 'success', 'msg': 'Game saved!' })
+	notif({ 'type': 'success', 'msg': 'Game saved!', 'position': 'center' })
 	return true
 }
 
@@ -201,6 +203,7 @@ Core.load = function(){
 		if(window.localStorage.getItem('version') !== Core.version){
 			return notif({
 				'type': 'error',
+				'position': 'center',
 				'msg': 'The savegame version (' + window.localStorage.getItem('version') + ') is different than the current (' + Core.version + ')'
 			})
 		}
@@ -218,7 +221,6 @@ Core.load = function(){
 			Stats.actualRestDate = new Date(window.localStorage.getItem('actualRestDate'))
 		}
 		if(!Stats.upgrades) Stats.upgrades = [  ]
-		Core._upgradesOwned.innerHTML = ''
 		for(var i = 0, len = Stats.upgrades.length; i < len; i++){
 			if(Upgrades[Stats.upgrades[i]]){
 				Upgrades[Stats.upgrades[i]].owned = true
@@ -275,11 +277,12 @@ Core.load = function(){
 		Core.updateHUD()
 		Core.showLastRestDate()
 		Core.get('#run-start').innerHTML = Stats.runStartDate.toString()
-		notif({ 'type': 'success', 'msg': 'Game loaded!' })
+		notif({ 'type': 'success', 'msg': 'Game loaded!', 'position': 'center' })
 	}else{
 		return notif({
 			'type': 'error',
-			'msg': 'Invalid savegame'
+			'msg': 'Invalid savegame',
+			'position': 'center'
 		})
 	}
 }
@@ -307,14 +310,22 @@ Core.hasUpgrade = function(upgradeID){
 
 Core.unlockUpgrade = function(upgradeID){
 	var upgrade = Upgrades[upgradeID]
-	if(!upgrade || upgrade.owned || upgrade.visible) return
+	if(!upgrade || upgrade.owned || upgrade.visible || Core.get('#upgrades #' + upgrade.id).length) return
 	upgrade.visible = true
+	Core._nextUpgradeName.innerHTML = upgrade.name
+	Core._nextUpgradeCost.innerHTML = Core.formatLength(Stats.nextUpgradeCost)
 	var button = document.createElement('button')
 	button.setAttribute('id', upgrade.id)
 	button.className = 'btn btn-primary upgrade'
-	button.innerHTML = upgrade.name + ' | ' + Core.formatLength(Stats.nextUpgradeCost)
+	button.innerHTML = 'Buy'
+	if(upgrade.required){
+		Core._nextUpgradeRequired.innerHTML = Shop.learnings[upgrade.required].name
+		Core._nextUpgradeRequired.parentNode.style.display = 'block'
+		button.setAttribute('data-required', upgrade.required)
+	}else{
+		Core._nextUpgradeRequired.parentNode.style.display = 'none'
+	}
 	button.setAttribute('data-cost', Stats.nextUpgradeCost)
-	button.title = upgrade.description
 	button.onclick = function(e){
 		e.preventDefault()
 		if(Stats.totalLength < Stats.nextUpgradeCost){
@@ -323,9 +334,7 @@ Core.unlockUpgrade = function(upgradeID){
 		Core.buyUpgrade(upgrade)
 		e.target.parentNode.removeChild(e.target)
 	}
-	if(!Core.get('#upgrades #' + upgrade.id).length){
-		Core._upgrades.appendChild(button)
-	}
+	Core._upgrades.appendChild(button)
 }
 
 Core.unlockNextUpgrade = function(upgradeID){
@@ -348,51 +357,24 @@ Core.buyUpgrade = function(upgrade){
 	if(upgrade.multiplier && upgrade.multiplier !== 1){
 		Stats.multiplier += upgrade.multiplier
 	}
-	// Stats.increment += 6 * Math.floor(Math.pow(1.6, Stats.upgrades.length))
+	Stats.increment = upgrade.speed
 	upgrade.effect()
 	upgrade.visible = false
 	upgrade.owned = true
 	Stats.upgrades.push(upgrade.id)
 	
-	var incc = 1.7
-	var incv = 3
-	var o1 = 1000
-	var v0 = 1
-
-	var ciclo = Stats.upgrades.length + 1
-	if(ciclo > 0){
-		Stats.increment = v0 * Math.pow(incv, ciclo)
-		coste = o1 * Math.pow(incc, ciclo)
-		var va = (v0 * Math.pow(incv, (ciclo-2)))
-		if(ciclo == 1){
-			va = v0
-		}
-		Stats.nextUpgradeCost = coste * va
-	}else{
-		Stats.increment = v0
-		Stats.nextUpgradeCost = o1
-	}
+	Core.calcNextUpgradeCost()
 
 	Core.addUpgrade(upgrade)
 	Core.unlockNextUpgrade(upgrade.id)
 }
 
 Core.addUpgrade = function(upgrade){
-	var span = document.createElement('button')
-	span.setAttribute('disabled', true)
-	span.className = 'btn btn-info upgrade-owned'
-	span.title = upgrade.description
-	span.innerHTML = upgrade.name
-	var _first = Core._upgradesOwned.querySelector('.upgrade-owned:first-child')
-	if(_first){
-		Core._upgradesOwned.insertBefore(span, Core._upgradesOwned.firstChild)
-	}else{
-		Core._upgradesOwned.appendChild(span)
-	}
+	Core._currentUpgrade.textContent = upgrade.name
 }
 
 Core.calcNextUpgradeCost = function(){
-	Stats.nextUpgradeCost = 1.5 * Math.floor(Stats.nextUpgradeCost * Math.pow(1.1, Stats.upgrades.length))
+	Stats.nextUpgradeCost *= 2.7 + (Stats.upgrades.length / 100)
 }
 
 Core.isArray = function(item){
@@ -411,14 +393,18 @@ Core.initAchievements = function(){
 		// Crear elemento DOM
 		var tr = document.createElement('tr')
 		var td = document.createElement('td')
+		var small = document.createElement('small')
+		small.className = 'achievement-description'
 		td.innerHTML = '<strong>' + Achievements[id].name + '</strong>'
 		var title = Achievements[id].description +
 								(Achievements[id].multiplierIncrement ?
 									' (multiplier +' + Achievements[id].multiplierIncrement + ')' : 
 									'')
 		td.setAttribute('title', title)
+		small.textContent = title
+		td.appendChild(small)
 		tr.appendChild(td)
-		tr.className = 'text-muted achievement ' + (Achievements[id].done ? 'unlocked' : 'locked')
+		tr.className = 'achievement ' + (Achievements[id].done ? 'unlocked' : 'locked')
 		// Guardar referencia
 		Achievements[id]._element = tr
 		Core._achievements.appendChild(Achievements[id]._element)
@@ -442,10 +428,11 @@ Core.unlockAchievement = function(achievement, silent){
 		.removeClass('locked')
 		.addClass('unlocked')
 		.removeClass('text-muted')
-	$(achievement._element).find('td').html(achievement.name + ' (multiplier +' + (achievement.multiplierIncrement || 0) + ')')
+	// $(achievement._element).find('td').html(achievement.name + ' (multiplier +' + (achievement.multiplierIncrement || 0) + ')')
 	if(!silent){
 		notif({
 			'type': 'info',
+			'position': 'center',
 			'msg': 'Achievement unlocked: ' + achievement.name
 		})
 	}
@@ -477,13 +464,13 @@ Core.boost = function(){
 	var boost = Stats.boostbarMax
 	Stats.totalLength += boost
 	Stats.boostbar = 0
-	Stats.boostbarMax += boost * 3
+	if(Stats.activePerk === 'littleboosts'){
+		Stats.boostbarMax += boost * 1.5
+	}else{
+		Stats.boostbarMax += boost * 3
+	}
 	Stats.boostbarTimesFilled++
 	Core.updateHUD()
-	notif({
-		'type': 'success',
-		'msg': 'You have been boosted for ' + Core.formatLength(boost) + '!'
-	})
 	document.title = 'Idle Traveller'
 	var sound = Core.get("#sound-system")
 	if(sound.getAttribute('played')){
@@ -517,9 +504,9 @@ Core.calcMultiplier = function(){
 Core.rest = function(){
 	Stats.multiplier = Core.calcMultiplier()
 	Stats.totalLength = 0
-	Stats.increment = 1
+	Stats.increment = Permastats.incrementBase
 	Stats.boostbar = 0
-	Stats.boostbarMax = 500
+	Stats.boostbarMax = Permastats.boostbarBaseMax
 	Stats.boostbarLength = 0
 	Stats.rests++
 	Stats.actualRestDate = new Date()
@@ -552,7 +539,7 @@ Core.resetUpgrades = function(){
 		Upgrades[upgrade].visible = false
 		Upgrades[upgrade].owned = false
 	}
-	Stats.nextUpgradeCost = 1000
+	Stats.nextUpgradeCost = 10
 	Core.unlockUpgrade('walking-shoes')
 }
 
@@ -659,9 +646,12 @@ Core.play = function(sound){
 Core._length = Core.get('#length')
 Core._lengthDetail = Core.get('#length-detail')
 Core._upgrades = Core.get('#upgrades')
-Core._upgradesOwned = Core.get('#upgrades-owned')
 Core._achievements = Core.get('#achievements > table')
 Core._runStart = Core.get('#info #run-start')
 Core._restCount = Core.get('#info #rest-count')
 Core._info = Core.get('#info')
 Core._btnRest = Core.get('#btn-rest')
+Core._currentUpgrade = Core.get('#current-upgrade')
+Core._nextUpgradeName = Core.get('#next-upgrade-name')
+Core._nextUpgradeCost = Core.get('#next-upgrade-cost')
+Core._nextUpgradeRequired = Core.get('#next-upgrade-required')
